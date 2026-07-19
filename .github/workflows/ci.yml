@@ -1,3 +1,4 @@
+# Pushary adapter CI
 name: CI
 
 on:
