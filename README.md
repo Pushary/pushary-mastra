@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/@pushary/mastra)](https://www.npmjs.com/package/@pushary/mastra)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Full walkthrough: [Human-in-the-loop for Mastra](https://pushary.com/human-in-the-loop-mastra). Reaching your own end-users on their phones is the Pushary [Partner plan](https://pushary.com/human-in-the-loop).
+Full walkthrough: [Human-in-the-loop for Mastra](https://pushary.com/human-in-the-loop-mastra?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme). Reaching your own end-users on their phones is the Pushary [Partner plan](https://pushary.com/human-in-the-loop?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme).
 
 Human-in-the-loop for [Mastra](https://mastra.ai). Ask a real human to approve, and
 get the answer on their phone. Two seams, pick by wait length:
@@ -13,7 +13,7 @@ get the answer on their phone. Two seams, pick by wait length:
 - **A durable workflow step** (`suspend`/`resume`) for long waits. Mastra persists the
   snapshot, so the wait holds no idle compute and survives a restart.
 
-Requires the Pushary [Partner plan](https://pushary.com/agent-notifications-integration)
+Requires the Pushary [Partner plan](https://pushary.com/agent-notifications-integration?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme)
 and `@mastra/core` v1.
 
 ## Install
@@ -95,6 +95,10 @@ export async function POST(req: Request) {
 - `pusharyApprovalStep(config, { callbackUrl })` — a durable `createStep` with suspend/resume.
 - `resolvePusharyCallback(raw, signature, secret)` — verify + parse a callback into `{ correlationId, answer, approved, ... }`.
 - `askExternalUser`, `createDurableDecision`, `describeAnswer`, `isAffirmative`, `deterministicKey`, `SIGNATURE_HEADER`.
+
+## Example
+
+A runnable example is in [`examples/`](examples).
 
 ## License
 
