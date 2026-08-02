@@ -27,7 +27,11 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
+      # NOT `npm ci`. This repo is a mirror: package.json is synced from the private
+      # monorepo but package-lock.json is not, because that monorepo is a bun
+      # workspace with no per-package lockfile to give. `npm ci` demands the two be
+      # in sync and fails with EUSAGE the moment a dependency range moves upstream.
+      - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
