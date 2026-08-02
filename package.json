@@ -1,6 +1,6 @@
 {
   "name": "@pushary/mastra",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Human-in-the-loop for Mastra: a blocking createTool that asks a real human on their phone, plus a durable suspend/resume workflow step.",
   "author": "Pushary <business@pushary.com>",
   "homepage": "https://pushary.com/human-in-the-loop-mastra",
