@@ -50,6 +50,50 @@ const agent = new Agent({
 The tool blocks until the person answers and returns `{ approved, value, status }`,
 fail-closed. `externalId` is bound in code, never taken from model input.
 
+## Gating a tool the model cannot skip
+
+`createPusharyAskTool` is a tool the model chooses to call. That is right for "go ask
+someone about this", and wrong for "this must not happen without a yes", because a
+model that does not want to be interrupted can decline to call it.
+
+Mastra's own gate splits in two: `requireApproval` decides *whether* a human is
+needed, and the run then suspends. Nothing asks anyone. `resolvePusharyApprovals` asks
+the person and resumes or declines:
+
+```ts
+import { createTool } from '@mastra/core/tools'
+import { pusharyRequireApproval, resolvePusharyApprovals } from '@pushary/mastra'
+
+const issueRefund = createTool({
+  id: 'issue-refund',
+  description: 'Refund an order',
+  inputSchema: z.object({ amount: z.number() }),
+  outputSchema: z.object({ ok: z.boolean() }),
+  requireApproval: pusharyRequireApproval(),
+  execute: async ({ amount }) => ({ ok: await chargeBack(amount) }),
+})
+
+const output = await agent.generate('Refund order 1234', { requireToolApproval: true })
+if (output.finishReason === 'suspended') {
+  await resolvePusharyApprovals({ externalId: user.id }, { agent })
+}
+```
+
+With no `runs` passed it lists the agent's own suspended runs, so a background worker
+can drain approvals for a whole thread with the same call. Scope it with `threadId` or
+`resourceId`, or hand in `runs` you already have.
+
+Each decision is keyed on `runId` plus `toolCallId`, so running this twice against the
+same suspended run resolves to the same decision rather than paging twice. A tool that
+suspended for its own resume data (rather than for approval) is left alone.
+
+Fail-closed: a denial, an expiry, or nobody answering all decline, with the reason
+handed to the model. For a multi-tenant product, resolve the end-user per call:
+
+```ts
+resolvePusharyApprovals({ externalId: (pending) => ownerOf(pending.runId) }, { agent })
+```
+
 ## Durable step
 
 ```ts
@@ -92,7 +136,10 @@ export async function POST(req: Request) {
 
 - `connect(config, externalId)` — enroll an end-user's phone.
 - `createPusharyAskTool(config, { externalId })` — a Mastra `createTool` that blocks on a human.
+- `pusharyRequireApproval()` — a `requireApproval` predicate that routes every call to a human.
+- `resolvePusharyApprovals(config, { agent, runs?, threadId?, resourceId? })` — ask about each suspended tool call, then approve or decline it.
 - `pusharyApprovalStep(config, { callbackUrl })` — a durable `createStep` with suspend/resume.
+- `createPusharyGate(config)` — the raw fail-closed gate, for anything the helpers above do not cover.
 - `resolvePusharyCallback(raw, signature, secret)` — verify + parse a callback into `{ correlationId, answer, approved, ... }`.
 - `askExternalUser`, `createDurableDecision`, `describeAnswer`, `isAffirmative`, `deterministicKey`, `SIGNATURE_HEADER`.
 

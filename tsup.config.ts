@@ -6,5 +6,5 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
-  external: ['@mastra/core', /^@mastra\//, 'zod', '@pushary/server'],
+  external: ['@mastra/core', /^@mastra\//, 'zod', '@pushary/server', /^@pushary\/server\//],
 })
