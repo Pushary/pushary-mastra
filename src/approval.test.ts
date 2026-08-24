@@ -11,17 +11,43 @@ interface Recorded {
 }
 type Responder = () => unknown
 
+// What POST /authorize answers. The gate asks policy before it asks a person; this
+// suite is about the framework binding, so the default verdict is the one that
+// still reaches a human.
+const REQUIRES_HUMAN = {
+  verdict: 'requires_human',
+  policy: null,
+  reason: 'No policy rule names this action, so a person decides.',
+  authorizationId: null,
+}
+
 const realFetch = globalThis.fetch
-const installFetch = (responders: readonly Responder[]): Recorded[] => {
+// The policy hop is answered but not recorded, so `calls` keeps meaning "the
+// decisions this adapter opened" and every assertion below reads as it did before
+// the gate consulted policy.
+const installFetch = (
+  responders: readonly Responder[],
+  evaluation: unknown = REQUIRES_HUMAN,
+): Recorded[] => {
   const calls: Recorded[] = []
   let i = 0
-  globalThis.fetch = (async (_input: unknown, init?: { body?: string }) => {
+  globalThis.fetch = (async (input: unknown, init?: { body?: string }) => {
+    if (String(input).endsWith('/authorize')) {
+      return { ok: true, status: 200, json: async () => evaluation } as Response
+    }
     calls.push({ body: init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : undefined })
     const json = responders[Math.min(i, responders.length - 1)]()
     i += 1
     return { ok: true, status: 200, json: async () => json } as Response
   }) as typeof fetch
   return calls
+}
+
+const ALLOWED = {
+  verdict: 'allow',
+  policy: 'issue_refund',
+  reason: 'Allowed by policy rule issue_refund.',
+  authorizationId: 'az_1',
 }
 afterEach(() => {
   globalThis.fetch = realFetch
@@ -98,6 +124,15 @@ describe('resolvePusharyApprovals', () => {
     expect(agent.approvals).toEqual([{ runId: 'run_1', toolCallId: 'tc_1' }])
     expect(agent.declines).toHaveLength(0)
     expect(outcome.allApproved).toBe(true)
+  })
+
+  it('approves the suspended call without opening a decision when a rule allows it', async () => {
+    const calls = installFetch([answered('yes')], ALLOWED)
+    const agent = fakeAgent([suspendedRun()])
+    const outcome = await resolvePusharyApprovals(CONFIG, { agent })
+    expect(agent.approvals).toEqual([{ runId: 'run_1', toolCallId: 'tc_1' }])
+    expect(outcome.allApproved).toBe(true)
+    expect(calls).toHaveLength(0)
   })
 
   it('declines with the reason when the human says no', async () => {
