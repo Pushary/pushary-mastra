@@ -53,7 +53,7 @@ export const requirePusharyExternalId = kernel.requireExternalId
 
 /**
  * Blocking ask (Pattern A): create a decision and poll durably until answered or the
- * deadline passes. Idempotency is keyed by externalId + node + question.
+ * deadline passes. A fresh key is used unless the caller supplies an operation-specific idempotencyKey.
  */
 export const askExternalUser = kernel.askExternalUser
 

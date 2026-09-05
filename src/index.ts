@@ -2,6 +2,7 @@ import { createTool } from '@mastra/core/tools'
 import { createStep } from '@mastra/core/workflows'
 import { z } from 'zod'
 import {
+  deterministicKey,
   askExternalUser,
   createDurableDecision,
   isAffirmative,
@@ -80,6 +81,9 @@ export interface PusharyApprovalStepOptions {
 }
 
 /**
+ * Each input must carry a unique operationId (for example a refund request ID),
+ * stable across retries and distinct for every loop/foreach action.
+ *
  * A Mastra workflow `createStep` that suspends until a human answers on their phone,
  * then resumes on Pushary's signed webhook. Mastra persists the workflow snapshot, so
  * an hour-long wait holds no idle compute and survives a restart.
@@ -93,12 +97,13 @@ export interface PusharyApprovalStepOptions {
  * ```
  *
  * Resume from the callback route:
- * `run.resume({ step: approval, resumeData: { answer: cb.answer } })`.
+ * `run.resume({ label: cb.correlationId, resumeData: { answer: cb.answer } })`.
  */
 export const pusharyApprovalStep = (config: PusharyMastraConfig, opts: PusharyApprovalStepOptions) =>
   createStep({
     id: opts.id ?? 'pushary-approval',
     inputSchema: z.object({
+      operationId: z.string().trim().min(1).describe('Unique action identity, stable on retries; distinct for each loop/foreach operation.'),
       question: z.string(),
       externalId: z.string().optional(),
     }),
@@ -113,8 +118,9 @@ export const pusharyApprovalStep = (config: PusharyMastraConfig, opts: PusharyAp
       approved: z.boolean(),
       value: z.string(),
     }),
-    execute: async ({ inputData, resumeData, suspend }) => {
+    execute: async ({ inputData, resumeData, suspend, runId }) => {
       if (!resumeData) {
+        if (!inputData.operationId?.trim()) throw new Error('pushary: operationId is required for each approval action.')
         const externalId = opts.externalId ?? inputData.externalId
         if (!externalId) {
           throw new Error('pushary: externalId is required (set it on the step options or the step input).')
@@ -123,9 +129,10 @@ export const pusharyApprovalStep = (config: PusharyMastraConfig, opts: PusharyAp
           question: inputData.question,
           externalId,
           node: opts.id ?? 'pushary-approval',
+          idempotencyKey: deterministicKey([runId, opts.id ?? 'pushary-approval', externalId, inputData.operationId]),
           callbackUrl: opts.callbackUrl,
         })
-        return await suspend({ decisionId, correlationId })
+        return await suspend({ decisionId, correlationId }, { resumeLabel: correlationId })
       }
       return { approved: isAffirmative(resumeData.answer), value: resumeData.answer }
     },

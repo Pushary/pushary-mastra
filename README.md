@@ -108,14 +108,14 @@ const approval = pusharyApprovalStep(
 
 export const refund = createWorkflow({
   id: 'refund',
-  inputSchema: z.object({ question: z.string(), externalId: z.string() }),
+  inputSchema: z.object({ operationId: z.string(), question: z.string(), externalId: z.string() }),
   outputSchema: z.object({ approved: z.boolean(), value: z.string() }),
 })
   .then(approval)
   .commit()
 ```
 
-Run it, and it suspends at the approval step. Resume from the callback route:
+Register the workflow with a Mastra instance configured with persistent storage before running it; resumption needs the saved snapshot. It suspends at the approval step. Resume from the callback route:
 
 ```ts
 import { resolvePusharyCallback } from '@pushary/mastra'
@@ -127,7 +127,7 @@ export async function POST(req: Request) {
   if (!cb) return new Response('bad signature', { status: 401 })
   const runId = await lookupRun(cb.correlationId) // your own correlationId -> runId map
   const run = await refund.createRun({ runId })
-  await run.resume({ step: approval, resumeData: { answer: cb.answer } })
+  await run.resume({ label: cb.correlationId, resumeData: { answer: cb.answer } })
   return new Response('ok')
 }
 ```
@@ -150,3 +150,10 @@ A runnable example is in [`examples/`](examples).
 ## License
 
 MIT
+
+## Operation identity
+
+Independent blocking asks create separate decisions. For a retry of one operation, pass `idempotencyKey` to `askExternalUser`. `createDurableDecision` requires that key before it can send: derive it from your unique run ID, step and user, never question text alone.
+The built-in `pusharyApprovalStep` combines the workflow run, step, recipient and `operationId`.
+
+Each durable step input requires `operationId`, such as a refund-request ID. Keep it stable when retrying that action, and use a distinct ID for every independent action, including items in `foreach` and repeated loop iterations. A workflow run ID alone cannot separate multiple approvals in one run.

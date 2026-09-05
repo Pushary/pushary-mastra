@@ -53,7 +53,7 @@ const ask = (r: Partial<AskResult>): AskResult => ({
 })
 
 describe('askExternalUser', () => {
-  it('creates then polls, keyed by externalId+node+question', async () => {
+  it('creates then polls with a fresh operation key', async () => {
     const calls = installFetch([
       () => ({ decisionId: 'd1', status: 'pending', answered: false, type: 'confirm' }),
       () => ({ decisionId: 'd1', status: 'answered', answered: true, value: 'yes', type: 'confirm' }),
@@ -73,7 +73,7 @@ describe('createDurableDecision', () => {
       question: 'Approve?',
       externalId: 'user_1',
       node: 'pushary-approval',
-      callbackUrl: 'https://app.example.com/cb',
+      callbackUrl: 'https://app.example.com/cb', idempotencyKey: 'operation-1',
     })
     expect(calls[0].body?.wait).toBe(false)
     expect(calls[0].body?.callbackUrl).toBe('https://app.example.com/cb')

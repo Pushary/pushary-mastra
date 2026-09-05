@@ -1,6 +1,6 @@
 {
   "name": "@pushary/mastra",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Human-in-the-loop for Mastra: a blocking createTool that asks a real human on their phone, plus a durable suspend/resume workflow step.",
   "author": "Pushary <business@pushary.com>",
   "homepage": "https://pushary.com/human-in-the-loop-mastra",
@@ -41,7 +41,7 @@
     "prepublishOnly": "npm run build && npm run typecheck"
   },
   "dependencies": {
-    "@pushary/server": "^1.4.0"
+    "@pushary/server": "^2.0.0"
   },
   "peerDependencies": {
     "@mastra/core": ">=1.0.0",
