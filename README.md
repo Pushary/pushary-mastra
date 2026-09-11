@@ -2,7 +2,22 @@
 
 Customer approvals and questions in the **Pushary mobile app**, connected to Mastra's agent execution controls. Use yes/no for permission, a choice for disambiguation, and text for missing information. Confirm notifications can offer yes/no actions; choices and text open the native app. The existing web/PWA surface remains a compatibility option.
 
-[Mastra integration guide](https://pushary.com/human-in-the-loop-mastra?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme) · [Public adapter repository](https://github.com/Pushary/pushary-mastra) · [Partner access](https://pushary.com/human-in-the-loop?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme)
+[Integration guide](https://pushary.com/human-in-the-loop-mastra?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=guide) · [Connect your customer’s phone](https://pushary.com/sign-up?from=agent&plan=partner&utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=partner-start) · [Report a problem](https://github.com/Pushary/pushary-mastra/issues)
+
+## Run a customer review locally
+
+Use Node.js 22.13 or later:
+
+```bash
+git clone https://github.com/Pushary/pushary-mastra.git
+cd pushary-mastra
+npm install
+npm run test:restart
+```
+
+No account, API key or model provider is needed. This example starts a real Mastra agent, exits, and resumes it in a fresh process after simulated approval, denial, choice and text answers. Refunds are simulated; it checks that a repeated answer does not execute the refund twice.
+
+[Follow the example on your phone](examples/README.md). The adapter is MIT-licensed. Real phone delivery uses the hosted Pushary service and requires developer Partner access; your customer needs the app, not a paid plan.
 
 ## Install and connect a customer
 
