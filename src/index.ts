@@ -5,15 +5,18 @@ import {
   deterministicKey,
   askExternalUser,
   createDurableDecision,
-  isAffirmative,
   type PusharyMastraConfig,
 } from './core'
 
 export * from './core'
 export * from './approval'
+export * from './deferred'
+export * from './questions'
+
+import { answerPusharyQuestion, fingerprintPusharyAction, pusharyAnswerSchema, pusharyQuestionSchema } from './questions'
 
 const DEFAULT_DESCRIPTION =
-  'Ask a real human to approve, choose, or answer. Delivered to their phone and answered from the lock screen. Blocks until they reply. Use before any risky or irreversible action or when you need a human decision.'
+  'Ask a real human to approve, choose, or answer. Delivered to their phone. Blocks until they reply. Use before any risky or irreversible action or when you need a human decision.'
 
 export interface PusharyAskToolOptions {
   /**
@@ -28,8 +31,7 @@ export interface PusharyAskToolOptions {
 
 /**
  * A Mastra `createTool` that asks a real human and blocks until they answer,
- * fail-closed. Add it to any `Agent({ tools })`. For waits longer than a request can
- * hold, use `pusharyApprovalStep` in a workflow instead.
+ * fail-closed. Add it to any `Agent({ tools })`.
  *
  * ```ts
  * const askHuman = createPusharyAskTool({ apiKey: KEY }, { externalId: user.id })
@@ -40,14 +42,7 @@ export const createPusharyAskTool = (config: PusharyMastraConfig, opts: PusharyA
   createTool({
     id: opts.id ?? 'ask-human',
     description: opts.description ?? DEFAULT_DESCRIPTION,
-    inputSchema: z.object({
-      question: z.string().describe('The exact question to put to the human.'),
-      type: z
-        .enum(['confirm', 'select', 'input'])
-        .default('confirm')
-        .describe('confirm = yes/no, select = pick an option, input = free text.'),
-      options: z.array(z.string()).optional().describe('The choices, for a select question.'),
-    }),
+    inputSchema: pusharyQuestionSchema,
     outputSchema: z.object({
       approved: z.boolean(),
       value: z.string().nullable(),
@@ -72,6 +67,8 @@ export interface PusharyApprovalStepOptions {
    * and drive `run.resume` from a route that receives it.
    */
   readonly callbackUrl: string
+  readonly expiresInSeconds?: number
+  readonly requireReachable?: boolean
   /**
    * The end-user who decides. Omit to take it from the step's `inputData.externalId`
    * (safe: step input comes from your workflow, not the model).
@@ -80,45 +77,29 @@ export interface PusharyApprovalStepOptions {
   readonly id?: string
 }
 
-/**
- * Each input must carry a unique operationId (for example a refund request ID),
- * stable across retries and distinct for every loop/foreach action.
- *
- * A Mastra workflow `createStep` that suspends until a human answers on their phone,
- * then resumes on Pushary's signed webhook. Mastra persists the workflow snapshot, so
- * an hour-long wait holds no idle compute and survives a restart.
- *
- * ```ts
- * const approval = pusharyApprovalStep(
- *   { apiKey: KEY },
- *   { callbackUrl: `${process.env.PUBLIC_URL}/api/pushary/callback` },
- * )
- * const wf = createWorkflow({ id: 'refund', inputSchema, outputSchema }).then(approval).commit()
- * ```
- *
- * Resume from the callback route:
- * `run.resume({ label: cb.correlationId, resumeData: { answer: cb.answer } })`.
- */
+export const pusharyApprovalStepInputSchema = z.object({
+  operationId: z.string().refine((value) => value.trim().length > 0, 'Operation ID cannot be blank.').describe('Unique action identity, stable on retries; distinct for each loop/foreach operation.'),
+  question: z.string().trim().min(1).max(500),
+  type: z.enum(['confirm', 'select', 'input']).default('confirm'),
+  options: z.array(z.string().min(1).max(200)).max(20).optional(),
+  externalId: z.string().optional(),
+})
+
 export const pusharyApprovalStep = (config: PusharyMastraConfig, opts: PusharyApprovalStepOptions) =>
   createStep({
     id: opts.id ?? 'pushary-approval',
-    inputSchema: z.object({
-      operationId: z.string().trim().min(1).describe('Unique action identity, stable on retries; distinct for each loop/foreach operation.'),
-      question: z.string(),
-      externalId: z.string().optional(),
-    }),
+    inputSchema: pusharyApprovalStepInputSchema,
     suspendSchema: z.object({
       decisionId: z.string(),
       correlationId: z.string(),
     }),
     resumeSchema: z.object({
-      answer: z.string(),
+      answer: z.string().nullable(),
+      status: z.enum(['answered', 'expired', 'cancelled']).default('answered'),
     }),
-    outputSchema: z.object({
-      approved: z.boolean(),
-      value: z.string(),
-    }),
+    outputSchema: pusharyAnswerSchema,
     execute: async ({ inputData, resumeData, suspend, runId }) => {
+      const question = pusharyQuestionSchema.parse(inputData)
       if (!resumeData) {
         if (!inputData.operationId?.trim()) throw new Error('pushary: operationId is required for each approval action.')
         const externalId = opts.externalId ?? inputData.externalId
@@ -126,14 +107,16 @@ export const pusharyApprovalStep = (config: PusharyMastraConfig, opts: PusharyAp
           throw new Error('pushary: externalId is required (set it on the step options or the step input).')
         }
         const { decisionId, correlationId } = await createDurableDecision(config, {
-          question: inputData.question,
+          ...question,
           externalId,
           node: opts.id ?? 'pushary-approval',
-          idempotencyKey: deterministicKey([runId, opts.id ?? 'pushary-approval', externalId, inputData.operationId]),
+          idempotencyKey: deterministicKey([runId, opts.id ?? 'pushary-approval', externalId, inputData.operationId, fingerprintPusharyAction(question)]),
           callbackUrl: opts.callbackUrl,
+          expiresInSeconds: opts.expiresInSeconds,
+          requireReachable: opts.requireReachable,
         })
         return await suspend({ decisionId, correlationId }, { resumeLabel: correlationId })
       }
-      return { approved: isAffirmative(resumeData.answer), value: resumeData.answer }
+      return answerPusharyQuestion(question, resumeData.status, resumeData.answer)
     },
   })

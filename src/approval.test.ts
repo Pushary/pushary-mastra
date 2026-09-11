@@ -1,9 +1,10 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import {
   pusharyRequireApproval,
   resolvePusharyApprovals,
   type ApprovableAgent,
   type SuspendedAgentRun,
+  type PusharyApprovalConfig,
 } from './approval'
 
 interface Recorded {
@@ -111,7 +112,7 @@ const fakeAgent = (runs: readonly SuspendedAgentRun[]): FakeAgent => {
 }
 
 describe('pusharyRequireApproval', () => {
-  it('routes every call to a human', async () => {
+  it('marks each tool call as requiring Mastra approval', async () => {
     expect(await pusharyRequireApproval()()).toBe(true)
   })
 })
@@ -120,7 +121,7 @@ describe('resolvePusharyApprovals', () => {
   it('approves the suspended call when the human says yes', async () => {
     installFetch([answered('yes')])
     const agent = fakeAgent([suspendedRun()])
-    const outcome = await resolvePusharyApprovals(CONFIG, { agent })
+    const outcome = await resolvePusharyApprovals(CONFIG, { agent, resourceId: 'customer_1' })
     expect(agent.approvals).toEqual([{ runId: 'run_1', toolCallId: 'tc_1' }])
     expect(agent.declines).toHaveLength(0)
     expect(outcome.allApproved).toBe(true)
@@ -129,7 +130,7 @@ describe('resolvePusharyApprovals', () => {
   it('approves the suspended call without opening a decision when a rule allows it', async () => {
     const calls = installFetch([answered('yes')], ALLOWED)
     const agent = fakeAgent([suspendedRun()])
-    const outcome = await resolvePusharyApprovals(CONFIG, { agent })
+    const outcome = await resolvePusharyApprovals(CONFIG, { agent, resourceId: 'customer_1' })
     expect(agent.approvals).toEqual([{ runId: 'run_1', toolCallId: 'tc_1' }])
     expect(outcome.allApproved).toBe(true)
     expect(calls).toHaveLength(0)
@@ -138,7 +139,7 @@ describe('resolvePusharyApprovals', () => {
   it('declines with the reason when the human says no', async () => {
     installFetch([answered('no')])
     const agent = fakeAgent([suspendedRun()])
-    const outcome = await resolvePusharyApprovals(CONFIG, { agent })
+    const outcome = await resolvePusharyApprovals(CONFIG, { agent, resourceId: 'customer_1' })
     expect(agent.approvals).toHaveLength(0)
     expect(agent.declines[0]?.reason).toContain('denied')
     expect(outcome.allApproved).toBe(false)
@@ -147,7 +148,7 @@ describe('resolvePusharyApprovals', () => {
   it('fails closed when nobody answers', async () => {
     installFetch([unanswered])
     const agent = fakeAgent([suspendedRun()])
-    const outcome = await resolvePusharyApprovals(CONFIG, { agent })
+    const outcome = await resolvePusharyApprovals(CONFIG, { agent, resourceId: 'customer_1' })
     expect(agent.declines).toHaveLength(1)
     expect(outcome.resolved[0]?.reason).toContain('No answer')
   })
@@ -159,7 +160,7 @@ describe('resolvePusharyApprovals', () => {
         toolCalls: [{ toolCallId: 'tc_9', toolName: 'wait-for-doc', requiresApproval: false }],
       }),
     ])
-    const outcome = await resolvePusharyApprovals(CONFIG, { agent })
+    const outcome = await resolvePusharyApprovals(CONFIG, { agent, resourceId: 'customer_1' })
     expect(calls).toHaveLength(0)
     expect(agent.approvals).toHaveLength(0)
     expect(agent.declines).toHaveLength(0)
@@ -168,14 +169,15 @@ describe('resolvePusharyApprovals', () => {
 
   it('keys the decision on runId and toolCallId so a re-run does not ask twice', async () => {
     const calls = installFetch([answered('yes'), answered('yes')])
-    await resolvePusharyApprovals(CONFIG, { agent: fakeAgent([suspendedRun()]) })
-    await resolvePusharyApprovals(CONFIG, { agent: fakeAgent([suspendedRun()]) })
+    await resolvePusharyApprovals(CONFIG, { resourceId: 'customer_1', agent: fakeAgent([suspendedRun()]) })
+    await resolvePusharyApprovals(CONFIG, { resourceId: 'customer_1', agent: fakeAgent([suspendedRun()]) })
     expect(calls[0]?.body?.idempotencyKey).toBe(calls[1]?.body?.idempotencyKey)
   })
 
   it('keys two runs of the same tool apart', async () => {
     const calls = installFetch([answered('yes'), answered('yes')])
     await resolvePusharyApprovals(CONFIG, {
+      resourceId: 'customer_1',
       agent: fakeAgent([suspendedRun(), suspendedRun({ runId: 'run_2' })]),
     })
     expect(calls[0]?.body?.idempotencyKey).not.toBe(calls[1]?.body?.idempotencyKey)
@@ -183,7 +185,7 @@ describe('resolvePusharyApprovals', () => {
 
   it('puts the tool arguments in the question', async () => {
     const calls = installFetch([answered('yes')])
-    await resolvePusharyApprovals(CONFIG, { agent: fakeAgent([suspendedRun()]) })
+    await resolvePusharyApprovals(CONFIG, { resourceId: 'customer_1', agent: fakeAgent([suspendedRun()]) })
     expect(String(calls[0]?.body?.question)).toContain('480')
   })
 
@@ -191,7 +193,7 @@ describe('resolvePusharyApprovals', () => {
     const calls = installFetch([answered('yes')])
     await resolvePusharyApprovals(
       { ...CONFIG, externalId: (pending) => `tenant:${pending.runId}` },
-      { agent: fakeAgent([suspendedRun()]) },
+      { resourceId: 'customer_1', agent: fakeAgent([suspendedRun()]) },
     )
     expect(calls[0]?.body?.externalId).toBe('tenant:run_1')
   })
@@ -221,10 +223,11 @@ describe('resolvePusharyApprovals', () => {
       async (options) => {
         calls += 1
         if (calls === 2) throw new Error('run is no longer suspended')
-        return realApprove(options)
+        await realApprove(options)
+        return { finishReason: 'suspended' }
       }
 
-    const outcome = await resolvePusharyApprovals(CONFIG, { agent })
+    const outcome = await resolvePusharyApprovals(CONFIG, { agent, resourceId: 'customer_1' })
 
     expect(outcome.resolved).toHaveLength(2)
     expect(outcome.resolved[0]).toMatchObject({ toolCallId: 'tc_1', approved: true })
@@ -239,3 +242,94 @@ describe('resolvePusharyApprovals', () => {
     expect(agent.listedWith[0]).toEqual({ threadId: 'thread_7' })
   })
 })
+
+
+it('requires a trusted run scope instead of listing every customer', async () => {
+  await expect(resolvePusharyApprovals(CONFIG, { agent: fakeAgent([]) })).rejects.toThrow('trusted runs')
+})
+
+it('honors explicit human-required policy and forwards structured arguments', async () => {
+  const calls = installFetch([answered('yes')], ALLOWED)
+  await resolvePusharyApprovals({ ...CONFIG, policy: false, subject: () => ({ toolTarget: 'order_1' }) }, {
+    agent: fakeAgent([]), runs: [suspendedRun()],
+  })
+  expect(calls).toHaveLength(1)
+  expect(calls[0].body).toMatchObject({ parameters: { amount: 480 }, toolTarget: 'order_1' })
+})
+
+it('preserves a suspended generation and returns the next review at the configured limit', async () => {
+  installFetch([answered('yes')])
+  const next = suspendedRun({ toolCalls: [{ toolCallId: 'tc_2', toolName: 'send-email', requiresApproval: true }] })
+  const output = { finishReason: 'suspended', text: 'Need another approval' }
+  const agent: ApprovableAgent<typeof output> = {
+    listSuspendedRuns: async () => ({ runs: [next] }),
+    approveToolCallGenerate: async () => output,
+    declineToolCallGenerate: async () => output,
+  }
+  const outcome = await resolvePusharyApprovals({ ...CONFIG, maxApprovals: 1 }, { agent, runs: [suspendedRun()] })
+  expect(outcome.resolved[0].output).toBe(output)
+  expect(outcome.pending).toEqual([next])
+  expect(outcome.allApproved).toBe(false)
+})
+
+it('retains the generated output when snapshot rediscovery fails', async () => {
+  installFetch([answered('yes')])
+  const output = { finishReason: 'suspended', text: 'Awaiting next input' }
+  const agent: ApprovableAgent<typeof output> = {
+    listSuspendedRuns: async () => { throw new Error('storage unavailable') },
+    approveToolCallGenerate: async () => output,
+    declineToolCallGenerate: async () => output,
+  }
+  const result = await resolvePusharyApprovals(CONFIG, { agent, runs: [suspendedRun()] })
+  expect(result.resolved).toHaveLength(1)
+  expect(result.resolved[0]).toMatchObject({ output, discoveryError: 'storage unavailable' })
+  expect(result.allApproved).toBe(false)
+})
+
+it.each(['http400', 'http503', 'customer', 'subject', 'question', 'identity'] as const)(
+  'retains an earlier generation when the next review fails during %s',
+  async (failure) => {
+    installFetch([answered('yes')])
+    const approvedFetch = globalThis.fetch
+    let requests = 0
+    globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+      requests += 1
+      if (failure.startsWith('http') && requests > 1) return Response.json({ error: 'Review request rejected' }, { status: failure === 'http400' ? 400 : 503 })
+      return approvedFetch(...args)
+    }) as typeof fetch
+    const output = { finishReason: 'stop', text: 'The first action completed' }
+    const resume = vi.fn(async () => output)
+    const agent: ApprovableAgent<typeof output> = {
+      listSuspendedRuns: async () => ({ runs: [] }),
+      approveToolCallGenerate: resume,
+      declineToolCallGenerate: vi.fn(async () => output),
+    }
+    const later = suspendedRun({
+      runId: 'run_2',
+      toolCalls: [{ toolCallId: failure === 'identity' ? undefined : 'tc_2', toolName: 'send-email', requiresApproval: true }],
+    })
+    const config: PusharyApprovalConfig = {
+      ...CONFIG,
+      policy: false,
+      externalId: ({ runId }) => failure === 'customer' && runId === 'run_2' ? undefined : 'user_1',
+      subject: ({ runId }) => {
+        if (failure === 'subject' && runId === 'run_2') throw new Error('Subject could not be prepared')
+        return {}
+      },
+      question: ({ runId }) => {
+        if (failure === 'question' && runId === 'run_2') throw new Error('Question could not be prepared')
+        return 'Approve this action?'
+      },
+    }
+    const outcome = await resolvePusharyApprovals(config, { agent, runs: [suspendedRun(), later] })
+    expect(outcome.resolved).toHaveLength(2)
+    expect(outcome.resolved[0]).toMatchObject({ approved: true, output })
+    expect(outcome.resolved[1]).toMatchObject({ runId: 'run_2', approved: false, reviewError: expect.any(String) })
+    expect(outcome.resolved[1].resumeError).toBeUndefined()
+    expect(outcome.resolved[1].output).toBeUndefined()
+    expect(outcome.pending).toEqual([later])
+    expect(outcome.allApproved).toBe(false)
+    expect(resume).toHaveBeenCalledTimes(1)
+    expect(agent.declineToolCallGenerate).not.toHaveBeenCalled()
+  },
+)
