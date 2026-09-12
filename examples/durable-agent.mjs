@@ -72,7 +72,13 @@ if (phase === 'connect') {
     return new Response(row.payload)
   }
   const question = scenario === 'select' || scenario === 'input'
-  const request = question ? { question: 'Customer choice?', type: scenario, ...(scenario === 'select' ? { options: ['yes', 'other'] } : {}) } : { orderId: 'order_1', amount: 20 }
+  const request = question ? {
+    question: scenario === 'select'
+      ? 'Choose yes to test a customer choice. This answer will not authorize a refund.'
+      : 'Type yes to test a written answer. This answer will not authorize a refund.',
+    type: scenario,
+    ...(scenario === 'select' ? { options: ['yes', 'other'] } : {}),
+  } : { orderId: 'order_1', amount: 20 }
   const toolName = question ? 'askHuman' : 'refund'
   const nextContent = (prompt) => prompt.some((message) => message.role === 'tool')
     ? { content: [{ type: 'text', text: 'Finished' }], finishReason: 'stop' }
@@ -161,7 +167,9 @@ if (phase === 'connect') {
           assert.equal(answer.value, value)
           assert.equal(answer.approved, false)
         }
-        assert.equal(database.prepare("SELECT calls FROM effects WHERE id = 'refund'").get()?.calls ?? 0, !question && value === 'yes' ? 1 : 0)
+        const executions = database.prepare("SELECT calls FROM effects WHERE id = 'refund'").get()?.calls ?? 0
+        assert.equal(executions, !question && value === 'yes' ? 1 : 0)
+        console.log(JSON.stringify({ scenario, answer: value, refundExecutions: executions }))
         assert.equal((await resumePusharyAgentReview(config, target)).status, 'duplicate')
         console.log(`${scenario}: recovered in a fresh process, answered, duplicate ignored`)
       }
