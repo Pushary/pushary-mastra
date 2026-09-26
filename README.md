@@ -1,10 +1,45 @@
 # @pushary/mastra
 
-Customer approvals and questions in the **Pushary mobile app**, connected to Mastra's agent execution controls. Use yes/no for permission, a choice for disambiguation, and text for missing information. Confirm notifications can offer yes/no actions; choices and text open the native app. The existing web/PWA surface remains a compatibility option.
+Phone approvals for Mastra agents. Your agent asks, your user taps Approve or Deny.
 
 [Integration guide](https://pushary.com/human-in-the-loop-mastra?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=guide) · [Connect your customer’s phone](https://pushary.com/sign-up?from=agent&plan=partner&utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=partner-start) · [Report a problem](https://github.com/Pushary/pushary-mastra/issues)
 
-## Run a customer review locally
+## What you need
+
+- A Pushary Partner plan, from $99 a month. [Start the trial](https://pushary.com/sign-up?from=agent&plan=partner&utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=partner-start).
+- An API key from [Partner onboarding](https://pushary.com/onboarding/partner), set as `PUSHARY_API_KEY`.
+- Your users install the free Pushary app ([iPhone](https://apps.apple.com/us/app/pushary/id6785677563), [Android](https://play.google.com/store/apps/details?id=com.pushary.app)). They never sign up or pay.
+
+## Quick start
+
+```bash
+npm install @pushary/mastra @mastra/core zod
+```
+
+```ts
+import { Agent } from '@mastra/core/agent'
+import { connect, createPusharyAskTool } from '@pushary/mastra'
+
+const config = { apiKey: process.env.PUSHARY_API_KEY! }
+const { universalLink } = await connect(config, authenticatedCustomer.id)
+// Once per user: show universalLink as a button or QR code.
+
+const agent = new Agent({
+  id: 'support',
+  name: 'Support',
+  instructions: 'Ask the customer before you refund an order.',
+  model: 'openai/gpt-4o',
+  tools: { askHuman: createPusharyAskTool(config, { externalId: authenticatedCustomer.id }) },
+})
+```
+
+Deliver this single-use enrollment link inside your authenticated product. The customer installs the native app and enables notifications. Enrollment binds their phone to your customer ID. Customer IDs are opaque: whitespace is preserved, blank IDs are rejected, and IDs over 256 UTF-16 code units are rejected before creating a review. Real delivery requires Pushary Partner access; neither a browser simulation nor a successful provider response proves the person saw the notification.
+
+`createPusharyAskTool` asks and waits for the answer. The model chooses when to call it, so it cannot force approval before another tool. For that, use Mastra's own `requireApproval` (below). Use yes or no for permission, a choice to pick between options, and text for missing information. Yes or no can be answered from the lock screen. Choices and text open the app. The existing web/PWA surface remains a compatibility option.
+
+Mastra's own approval docs: [Agent approval](https://mastra.ai/docs/agents/agent-approval).
+
+## Run an approval locally
 
 Use Node.js 22.13 or later:
 
@@ -18,23 +53,6 @@ npm run test:restart
 No account, API key or model provider is needed. This example starts a real Mastra agent, exits, and resumes it in a fresh process after simulated approval, denial, choice and text answers. Refunds are simulated; it checks that a repeated answer does not execute the refund twice.
 
 [Follow the example on your phone](examples/README.md). The adapter is MIT-licensed. Real phone delivery uses the hosted Pushary service and requires developer Partner access; your customer needs the app, not a paid plan.
-
-## Install and connect a customer
-
-```bash
-npm install @pushary/mastra @mastra/core zod
-```
-
-This version requires `@pushary/server ^2.1.0`, Mastra `>=1.59.0 <2.0.0`, and Node.js 22.13 or later, matching Mastra's runtime requirement. Configure Mastra with persistent storage for delayed answers.
-
-```ts
-import { connect } from '@pushary/mastra'
-
-const config = { apiKey: process.env.PUSHARY_API_KEY! }
-const { universalLink } = await connect(config, authenticatedCustomer.id)
-```
-
-Deliver this single-use enrollment link inside your authenticated product. The customer installs the native app and enables notifications. Enrollment binds their phone to your customer ID. Customer IDs are opaque: whitespace is preserved, blank IDs are rejected, and IDs over 256 UTF-16 code units are rejected before creating a review. Real delivery requires Pushary Partner access; neither a browser simulation nor a successful provider response proves the person saw the notification.
 
 ## Require approval before a tool executes
 
@@ -191,6 +209,10 @@ const workflow = createWorkflow({
 
 Input includes `operationId`, `question`, `type`, optional select `options`, and an external ID unless configured on the step. Each operation ID must identify one business action/revision, including each foreach item. Resume its correlation label with `{ answer, status: 'answered' }`, or `{ answer: null, status: 'expired' }`. The legacy `{ answer }` form defaults to answered. Output adds `status` and permits a null value for expiration/cancellation. A later workflow step must explicitly check `approved` before a protected action; branching on a truthy text answer is not approval. Only your authenticated callback/reconciliation handler should supply resume data after validating the saved operation binding.
 
+## Runtime requirements
+
+This version requires `@pushary/server ^2.1.0`, Mastra `>=1.59.0 <2.0.0`, and Node.js 22.13 or later, matching Mastra's runtime requirement. Configure Mastra with persistent storage for delayed answers.
+
 ## Run without a model, phone, account, or network
 
 ```bash
@@ -206,7 +228,7 @@ Unit tests cover tenant/context mismatch, early callbacks, concurrent claims, st
 
 ## Exercise the real phone path
 
-Run these commands from this package's source checkout after `npm install` and `npm run build`. Supply a **Partner** API key through your local secret environment as `PUSHARY_API_KEY` and the enrolled customer's exact ID as `PUSHARY_EXTERNAL_ID`. The key must belong to a workspace with Partner access; Partner onboarding normally issues an Agent-scoped runtime key. The backend must include the Partner runtime allowlist fix ([PR #1375](https://github.com/aadilghani1/pushary/pull/1375)); until that fix is deployed, the onboarding key can receive a scope-related 403 on enrollment or decision creation. Do not upgrade an agent runtime key to full access to work around that server bug. Set `PUSHARY_BASE_URL` only when using a different API environment, including its `/api/v1/server` path.
+Run these commands from this package's source checkout after `npm install` and `npm run build`. Supply a **Partner** API key through your local secret environment as `PUSHARY_API_KEY` and the enrolled customer's exact ID as `PUSHARY_EXTERNAL_ID`. The key must belong to a workspace with Partner access; Partner onboarding normally issues an Agent-scoped runtime key. Set `PUSHARY_BASE_URL` only when using a different API environment, including its `/api/v1/server` path.
 
 If the test customer has not enrolled, run this once and open the printed private enrollment link on their phone:
 
