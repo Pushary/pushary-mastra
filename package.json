@@ -1,6 +1,6 @@
 {
   "name": "@pushary/mastra",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Phone approvals for Mastra agents. Your agent asks, your user taps Approve or Deny.",
   "author": "Pushary <business@pushary.com>",
   "homepage": "https://pushary.com/human-in-the-loop-mastra",
