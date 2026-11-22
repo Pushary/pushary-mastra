@@ -10,6 +10,14 @@ Phone approvals for Mastra agents. Your agent asks, your user taps Approve or De
 - An API key from [Partner onboarding](https://pushary.com/onboarding/partner?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=partner-start), set as `PUSHARY_API_KEY`.
 - Your users install the free Pushary app ([iPhone](https://apps.apple.com/us/app/pushary/id6785677563), [Android](https://play.google.com/store/apps/details?id=com.pushary.app)). They never sign up or pay.
 
+## What your customer gets
+
+1. They open your connect link once. It shows your product's name and logo and connects their phone.
+2. When your agent suspends on a tool marked `requireApproval`, a push notification titled with your product name arrives, such as **Acme needs your approval**.
+3. They approve or decline, pick an option or type an answer. Your server resumes the run. A decline, an expired question or no answer at all keeps the tool from running.
+
+Pushary hosts the phone delivery, the decision record and the [audit log](https://pushary.com/docs/agents/audit-log?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme). Mastra keeps the suspended run in its storage. Your app keeps its own sign-in, the review mapping and the action itself.
+
 ## Quick start
 
 ```bash
@@ -35,7 +43,7 @@ const agent = new Agent({
 
 Deliver this single-use enrollment link inside your authenticated product. The customer installs the native app and enables notifications. Enrollment binds their phone to your customer ID. Customer IDs are opaque: whitespace is preserved, blank IDs are rejected, and IDs over 256 UTF-16 code units are rejected before creating a review. Real delivery requires Pushary Partner access; neither a browser simulation nor a successful provider response proves the person saw the notification.
 
-`createPusharyAskTool` asks and waits for the answer. The model chooses when to call it, so it cannot force approval before another tool. For that, use Mastra's own `requireApproval` (below). Use yes or no for permission, a choice to pick between options, and text for missing information. Yes or no can be answered from the lock screen. Choices and text open the app. The existing web/PWA surface remains a compatibility option.
+`createPusharyAskTool` asks and waits for the answer. The model chooses when to call it, so it cannot force approval before another tool. For that, use Mastra's own `requireApproval` (below). Use yes or no for permission, a choice to pick between options, and text for missing information. On iPhone, yes or no can be answered from the lock screen. Choices and text open the app. The existing web/PWA surface remains a compatibility option.
 
 Mastra's own approval docs: [Agent approval](https://mastra.ai/docs/agents/agent-approval).
 
@@ -254,5 +262,13 @@ npm run test:live-http
 ```
 
 That check covers pending answers, start retries, approval, denial, selection, text, duplicate resumption, and customer isolation. It is not evidence of physical notification delivery. Record a real phone run before making that claim. OS notification delivery and in-app behavior also require the native/server review changes to be available in your test environment.
+
+## Links
+
+- [Human in the loop for Mastra](https://pushary.com/human-in-the-loop-mastra?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme): what your customer sees, with the full example.
+- [Mastra guide](https://pushary.com/docs/agents/build/mastra?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme) in the Pushary docs.
+- [Partner plan](https://pushary.com/partners?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme), from $99 a month. All plans are on the [pricing page](https://pushary.com/pricing?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme).
+- [Browser demo](https://pushary.com/try?utm_source=github&utm_medium=oss-adapter&utm_campaign=pushary-mastra&utm_content=readme) of one approval.
+- Other adapters: [Vercel AI SDK](https://github.com/Pushary/pushary-ai-sdk), [LangGraph](https://github.com/Pushary/pushary-langgraph), [durable workflows](https://github.com/Pushary/pushary-durable).
 
 MIT

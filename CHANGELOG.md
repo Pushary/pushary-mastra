@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+README: what you get after you sign in, plans, and links to the integration's pages. No code changes.
+
 ## 0.4.1
 
 The README and the package description now lead with what the package does: your agent asks, your user taps Approve or Deny on their phone. No code changes.
